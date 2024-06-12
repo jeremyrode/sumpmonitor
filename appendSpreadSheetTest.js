@@ -1,10 +1,9 @@
+#!/usr/bin/node
+'use strict';
 
-
-require('dotenv').config();
+require('dotenv').config(); //Load Env from file
 const { google } = require('googleapis');
 const sheets = google.sheets('v4');
-
-const spreadsheetId = process.env.SPREADSHEET_ID;
 
 async function getAuthToken() {
   const auth = new google.auth.GoogleAuth({
@@ -14,19 +13,35 @@ async function getAuthToken() {
   return authToken;
 }
 
+async function testAppendSpreadSheet() {
+  let values = [
+    [
+      "1235", 
+      "2341", 
+      "13455"
+    ]
+  ];
+  const resource = {
+    values,
+  };
+ 
+  const auth = await getAuthToken();
 
-
-async function testGetSpreadSheet() {
-  try {
-    const auth = await getAuthToken();
-    const response = await sheets.spreadsheets.get({
-      spreadsheetId,
-      auth,
-    });
-    console.log('output for getSpreadSheet', JSON.stringify(response.data, null, 2));
-  } catch(error) {
-    console.log(error.message, error.stack);
-  }
+  sheets.spreadsheets.values.append({
+    spreadsheetId: process.env.SPREADSHEET_ID,
+    range: 'Sheet1!A:C',
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    resource: resource,
+    auth
+  }, (err, result) => {
+    if (err) {
+      // Handle error.
+      console.log(err);
+    } else {
+      console.log('Google Says: ' + result.statusText);
+    }
+  });
 }
 
-testGetSpreadSheet();
+testAppendSpreadSheet();
