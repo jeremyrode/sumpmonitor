@@ -13,8 +13,10 @@ var ip = require("ip");
 const DATA_LOG_FILE = '/home/jprode/SumpData.csv';
 const ERR_LOG_FILE = '/home/jprode/SumpErrorLog.txt';
 const MEASUREMENT_INTERVAL = 30;
-const WRITE_TO_GOOGLE_INTERVAL = 2;
-const DATA_CAPTURE_INTERVAL = 100;
+const WRITE_TO_GOOGLE_INTERVAL = 100;  //How many datapoints to capture between Google API Calls
+const DATA_CAPTURE_INTERVAL = 10; //How many ADC samples averaged into a datapoint
+const ZERO_LEVEL_CODE = 3084.327283; //Might be altitude dependent
+const DEPTH_SLOPE = 148.93; //Codes per inch
 
 const dayFraction = 86400000; // Milliseconds in a Day
 const dateOffset = new Date(1899,11,30) - 3600000;  // Spreadsheet Epoc minus an hour
@@ -58,19 +60,21 @@ async function AppendSpreadSheet(measurmentArray) {
 ADS1115.open(0, 0x48).then(async (ads1115) => {
   let measurmentArray = [];
   let mesaurementCount = 0;
+  ads1115.gain = 1;
   let ave_level = await ads1115.measure('0+GND');
   let  ave_current = await ads1115.measure('1+GND');
-  ads1115.gain = 1;
+  logWithTime('New Session');
   while (true) {
     let cur_level = await ads1115.measure('0+GND');  // DATA_CAPTURE_INTERVAL * ();
     let cur_current = await ads1115.measure('1+GND');
     ave_level = cur_level / DATA_CAPTURE_INTERVAL + ave_level * (DATA_CAPTURE_INTERVAL - 1) / DATA_CAPTURE_INTERVAL;
+    let depth_inches = (ave_level - ZERO_LEVEL_CODE) / DEPTH_SLOPE;
     ave_current = cur_current / DATA_CAPTURE_INTERVAL + ave_current * (DATA_CAPTURE_INTERVAL - 1) / DATA_CAPTURE_INTERVAL;
     const curDate = new Date();
     const strcurData = curDate.toString();
     if (mesaurementCount >= DATA_CAPTURE_INTERVAL) {
-      measurmentArray.push([(curDate - dateOffset) / dayFraction, ave_level, ave_current]);
-      datafile.write(curDate.valueOf() + ',' + ave_level + ',' + ave_current + '\n');
+      measurmentArray.push([(curDate - dateOffset) / dayFraction, depth_inches, ave_current]);
+      datafile.write(curDate.valueOf() + ',' + depth_inches + ',' + ave_current + '\n');
       mesaurementCount = 0;
       if (measurmentArray.length >= WRITE_TO_GOOGLE_INTERVAL) {
           AppendSpreadSheet(measurmentArray);
@@ -79,7 +83,7 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
     }
     lcd.printLineSync(0, strcurData.slice(0,15));
     lcd.printLineSync(1, strcurData.slice(16,24));
-    lcd.printLineSync(2, `${Math.round(ave_level)} ${Math.round(ave_current)}`);
+    lcd.printLineSync(2, depth_inches.toFixed(2).toString().padStart(6));
     mesaurementCount += 1;
   }
 })
