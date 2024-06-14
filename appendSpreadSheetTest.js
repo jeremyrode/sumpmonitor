@@ -5,6 +5,9 @@ require('dotenv').config(); //Load Env from file
 const { google } = require('googleapis');
 const sheets = google.sheets('v4');
 
+const dayFraction = 86400000; // Milliseconds in a Day
+const dateOffset = new Date(1899,11,30) - 3600000;  // Spreadsheet Epoc minus an hour
+
 async function getAuthToken() {
   const auth = new google.auth.GoogleAuth({
     scopes: 'https://www.googleapis.com/auth/spreadsheets'
@@ -14,13 +17,15 @@ async function getAuthToken() {
 }
 
 async function testAppendSpreadSheet() {
+  const curDate = new Date();
   let values = [
     [
-      "1235", 
+      (curDate - dateOffset) / dayFraction, 
       "2341", 
       "13455"
     ]
   ];
+  console.log(curDate.toLocaleString("en-US"));
   const resource = {
     values,
   };
@@ -43,5 +48,6 @@ async function testAppendSpreadSheet() {
     }
   });
 }
+
 
 testAppendSpreadSheet();
