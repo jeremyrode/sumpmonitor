@@ -8,12 +8,12 @@ const fs = require('fs');
 const LCD = require('raspberrypi-liquid-crystal');
 const ADS1115 = require('ads1115');
 const lcd = new LCD( 1, 0x27, 20, 4 );
-var ip = require("ip");
+const ip = require("ip");
 
 const DATA_LOG_FILE = '/home/jprode/SumpData.csv';
 const ERR_LOG_FILE = '/home/jprode/SumpErrorLog.txt';
 const DATA_CAPTURE_INTERVAL = 1; //How many ADC samples averaged into a datapoint (~10 Hz)
-const MAX_DATA_IN_RAM = 300000; //Max size of RAM cache in case of long term internet failure
+const MAX_DATA_IN_RAM = 100000; //Max size of RAM cache in case of long term internet failure
 const ZERO_LEVEL_CODE = 3084.327283; //Code at Zero water level, Might be altitude/temp dependent
 const DEPTH_SLOPE = 148.93; //Codes per inch, prob temp dependent
 const ZERO_CURRENT_CODE = 2; //How many codes is zero current
@@ -31,10 +31,12 @@ let measurmentArray = [];
 //Running Averages
 let ave_level = 0;
 let ave_current = 0;
+let internet_down = false;
 //Setup LCD
 lcd.beginSync();
 lcd.clearSync();
-//We need to fill in the slow intervals
+//Fill the display initally
+lcd.printLineSync(0,'Starting....');
 printIPAddress();
 printDate();
 //Interval Section
@@ -87,6 +89,7 @@ async function AppendSpreadSheet() {
         logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
     } else {
       measurmentArray = []; //If success clear out stored measurments
+      internet_down = false;
     }
   });
 }
@@ -104,8 +107,11 @@ function TakeMeasurement() {
     current_amps = 6.14e-2*ave_current_debiased - 1.6e-4*ave_current_debiased*ave_current_debiased; // Not linear at low current
   }
   //Push into measurement array for Google
-  if (true) { //measurmentArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
+  if (measurmentArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
     measurmentArray.push([(curDate - dateOffset) / dayFraction, depth_inches, current_amps]);
+  } else if (!internet_down) { //ony log on state change
+    logWithTime('Dropping Measurments due to Max Data');
+    internet_down = true;
   }
   //Log to a CSV for backup
   datafile.write(curDate.valueOf() + ',' + depth_inches.toFixed(4) + ',' + current_amps.toFixed(4) + '\n');
