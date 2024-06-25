@@ -12,7 +12,7 @@ const ip = require("ip");
 
 const DATA_LOG_FILE = '/home/jprode/SumpData.csv';
 const ERR_LOG_FILE = '/home/jprode/SumpErrorLog.txt';
-const DATA_CAPTURE_INTERVAL = 1; //How many ADC samples averaged into a datapoint (~10 Hz)
+const DATA_IIR_CONST = 100; //How many ADC samples averaged into a datapoint (~10 Hz)
 const MAX_DATA_IN_RAM = 100000; //Max size of RAM cache in case of long term internet failure
 const ZERO_LEVEL_CODE = 3084.327283; //Code at Zero water level, Might be altitude/temp dependent
 const DEPTH_SLOPE = 148.93; //Codes per inch, prob temp dependent
@@ -37,14 +37,15 @@ lcd.beginSync();
 lcd.clearSync();
 //Fill the display initally
 lcd.printLineSync(0,'Starting....');
-printIPAddress();
-printDate();
 //Interval Section
-setInterval(TakeMeasurement, 10); //Take a Datapoint
-setInterval(AppendSpreadSheet, 5 * 60 * 1000); //Send data to Google
+setTimeout(setInterval,30000,TakeMeasurement, 10000); //Take a Datapoint every 10s, after 30s delay
+setInterval(AppendSpreadSheet, 30 * 60 * 1000); //Send data to Google
 //SCREEN SECTION: Print out each line seperatly at approprite intevals
+printIPAddress();
 setInterval(printIPAddress, 10 * 60 * 1000); //Update IP on Screen
+printDate();
 setInterval(printDate, 120 * 60 * 1000); //Update Date on Screen
+//setInterval(printADCCodes, 1000); //ADC Codes for debug
 setInterval(printTime, 5000);
 setInterval(printData, 1000);
 //SCREEN PRINT SECTION: By line
@@ -61,6 +62,9 @@ function printTime() {
 function printDate() {
   const curDate = new Date();
   lcd.printLineSync(2, curDate.toString().slice(0,15));
+}
+function printADCCodes() {
+  lcd.printLineSync(2, ave_level.toFixed(2).padStart(10) + ave_current.toFixed(2).padStart(10))
 }
 function printIPAddress() {
   lcd.printLineSync(3, ip.address());
@@ -127,8 +131,8 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
       cur_current = cur_current - 65536; //Take me negative
     }
     // Use a IIR to take a running average of the ADC Codes
-    ave_level = cur_level / DATA_CAPTURE_INTERVAL + ave_level * (DATA_CAPTURE_INTERVAL - 1) / DATA_CAPTURE_INTERVAL;
-    ave_current = cur_current / DATA_CAPTURE_INTERVAL + ave_current * (DATA_CAPTURE_INTERVAL - 1) / DATA_CAPTURE_INTERVAL;
+    ave_level = cur_level / DATA_IIR_CONST + ave_level * (DATA_IIR_CONST - 1) / DATA_IIR_CONST;
+    ave_current = cur_current / DATA_IIR_CONST + ave_current * (DATA_IIR_CONST - 1) / DATA_IIR_CONST;
   }
 })
 //log stuff to a file for debug
