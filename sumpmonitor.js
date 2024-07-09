@@ -30,10 +30,10 @@ auth.expiryDate = 0;
 //Store the measurments, sent to Google in batches
 let measurmentArray = [];
 //Running Averages
-let min_level = 1000;
+let min_level = 10000000;
 let ave_level = 0;
 let max_level = 0;
-let min_current = 1000;
+let min_current = 10000000;
 let ave_current = 0;
 let max_current = 0;
 let min_cycle_time = 10000000;
@@ -138,9 +138,9 @@ function TakeMeasurement() {
     + min_current_amps.toFixed(4) + ',' + ave_current_amps.toFixed(4) + ',' + max_current_amps.toFixed(4)  + ',' 
     + min_cycle_time.toFixed(4) + ',' + ave_cycle_time.toFixed(4) + ',' + max_cycle_time.toFixed(4) + '\n');
   //Reset Min/Max
-  min_level = 1000;
+  min_level = 10000000;
   max_level = 0;
-  min_current = 1000;
+  min_current = 10000000;
   max_current = 0;
   min_cycle_time = 10000000;
   max_cycle_time = 0;
