@@ -13,6 +13,7 @@ const ip = require("ip");
 const DATA_LOG_FILE = '/home/jprode/SumpData.csv';
 const ERR_LOG_FILE = '/home/jprode/SumpErrorLog.txt';
 const DATA_IIR_CONST = 10000; //How many ADC samples averaged into a datapoint (33 ms / 30 Hz ADC Rate)
+const CYCLE_IIR_CONST = 10;
 const MAX_DATA_IN_RAM = 100000; //Max size of RAM cache in case of long term internet failure
 const ZERO_LEVEL_CODE = 3084.327283; //Code at Zero water level, Might be altitude/temp dependent
 const DEPTH_SLOPE = 148.93; //Codes per inch, prob temp dependent
@@ -182,7 +183,7 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
     } else {
       if (cur_current < 8) { //Negative threshold
         let cur_cycle_time = (Date.now() - last_cycle);
-        ave_cycle_time =  cur_cycle_time / DATA_IIR_CONST + ave_cycle_time * (DATA_IIR_CONST - 1) / DATA_IIR_CONST;
+        ave_cycle_time =  cur_cycle_time / CYCLE_IIR_CONST + ave_cycle_time * (CYCLE_IIR_CONST - 1) / CYCLE_IIR_CONST;
         if (cur_cycle_time > max_cycle_time) {
           max_cycle_time = cur_cycle_time;
         }
