@@ -12,7 +12,7 @@ const ip = require("ip");
 
 const DATA_LOG_FILE = '/home/jprode/SumpData.csv';
 const ERR_LOG_FILE = '/home/jprode/SumpErrorLog.txt';
-const DATA_IIR_CONST = 10000; //How many ADC samples averaged into a datapoint (33 ms / 30 Hz ADC Rate)
+const DATA_IIR_CONST = 50000; //How many ADC samples averaged into a datapoint (33 ms / 30 Hz ADC Rate)
 const CYCLE_IIR_CONST = 10;
 const MAX_DATA_IN_RAM = 100000; //Max size of RAM cache in case of long term internet failure
 const ZERO_LEVEL_CODE = 3084.327283; //Code at Zero water level, Might be altitude/temp dependent
@@ -46,8 +46,8 @@ lcd.clearSync();
 //Fill the display initally
 lcd.printLineSync(0,'Starting....');
 //Interval Section
-setTimeout(setInterval,10 * 60 * 1000,TakeMeasurement, 10 * 60 * 1000); //Take a Datapoint every 10 min, after 10 min delay to flush
-setInterval(AppendSpreadSheet, 20 * 60 * 1000); //Send data to Google
+setTimeout(setInterval,30 * 60 * 1000,TakeMeasurement, 30 * 60 * 1000); //Take a Datapoint every 30 min, after 30 min delay to flush
+setInterval(AppendSpreadSheet, 2 * 60 * 60 * 1000); //Send data to Google
 //SCREEN SECTION: Print out each line seperatly at approprite intevals
 printIPAddress();
 setInterval(printIPAddress, 10 * 60 * 1000); //Update IP on Screen
