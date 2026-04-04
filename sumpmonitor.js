@@ -25,7 +25,7 @@ const datafile = fs.createWriteStream(DATA_LOG_FILE, { flags: 'a' });
 const GoogleAuth = new google.auth.GoogleAuth({
   scopes: 'https://www.googleapis.com/auth/spreadsheets'
 });
-let auth = { expiryDate: 0 };
+let auth = null;
 //Store the measurments, sent to Google in batches
 let measurementArray = [];
 //Running Averages
@@ -78,17 +78,25 @@ function printIPAddress() {
 }
 //Send the Data to Google Sheets, retain in memory if not sent
 async function AppendSpreadSheet() {
-  if (auth.expiryDate < Date.now()) {
+  if (measurementArray.length === 0) return; // Nothing to send
+
+  if (!auth) {
     logWithTime('Getting New Google Credentials');
     auth = await GoogleAuth.getClient();
   }
+
+  // Clone array to prevent race condition data loss 
+  // (where TakingMeasurements pushes new data while the network request is in-flight)
+  const dataToSend = measurementArray.slice();
+  const numSent = dataToSend.length;
+
   sheets.spreadsheets.values.append({
     spreadsheetId: process.env.SPREADSHEET_ID,
     range: 'Slow!A:J',
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     resource: {
-      values: measurementArray,
+      values: dataToSend,
     },
     auth: auth
   }, (err, result) => {
@@ -99,7 +107,7 @@ async function AppendSpreadSheet() {
       logWithTime('Google Says Not OK: ' + JSON.stringify(result));
       logWithTime('Cacheing ' + measurementArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
     } else {
-      measurementArray = []; //If success clear out stored measurments
+      measurementArray.splice(0, numSent); // Remove ONLY what was successfully sent
       internet_down = false;
     }
   });
@@ -124,10 +132,13 @@ function TakeMeasurement() {
   const min_current_amps = adcCodeToCurrent(min_current);
   const ave_current_amps = adcCodeToCurrent(ave_current);
   const max_current_amps = adcCodeToCurrent(max_current);
+  // Handle null bounds if no cycles occurred this period
+  const reported_min_cycle_time = min_cycle_time === 10000000 ? 0 : min_cycle_time;
+
   //Push into measurement array for Google
   if (measurementArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
     measurementArray.push([(curDate - dateOffset) / dayFraction, min_level_inches, ave_level_inches, max_level_inches,
-      min_current_amps, ave_current_amps, max_current_amps, min_cycle_time / 1000, ave_cycle_time / 1000, max_cycle_time / 1000]);
+      min_current_amps, ave_current_amps, max_current_amps, reported_min_cycle_time / 1000, ave_cycle_time / 1000, max_cycle_time / 1000]);
   } else if (!internet_down) { //ony log on state change
     logWithTime('Dropping Measurments due to Max Data');
     internet_down = true;
@@ -135,7 +146,7 @@ function TakeMeasurement() {
   //Log to a CSV for backup
   datafile.write(curDate.valueOf() + ',' + min_level_inches.toFixed(4) + ',' + ave_level_inches.toFixed(4) + ',' + max_level_inches.toFixed(4) + ','
     + min_current_amps.toFixed(4) + ',' + ave_current_amps.toFixed(4) + ',' + max_current_amps.toFixed(4) + ','
-    + min_cycle_time.toFixed(4) + ',' + ave_cycle_time.toFixed(4) + ',' + max_cycle_time.toFixed(4) + '\n');
+    + reported_min_cycle_time.toFixed(4) + ',' + ave_cycle_time.toFixed(4) + ',' + max_cycle_time.toFixed(4) + '\n');
   //Reset Min/Max
   min_level = 10000000;
   max_level = 0;
@@ -149,51 +160,71 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
   ads1115.gain = 1;
   let pos_cycle = true;
   let last_cycle = 0;
+  let first_reading = true;
+  let first_cycle = true;
   logWithTime('Measurment Loop Started');
   while (true) { //Run the ADC as fast as we can
-    let cur_level = await ads1115.measure('0+3'); //This never gets near zero
-    let cur_current = await ads1115.measure('2+3'); //This can go slightly below zero
-    if (cur_current >= 32768) { // 2's compliment crosses near zero sometimes
-      cur_current = cur_current - 65536; //Take me negative
-    }
-    // Use a IIR to take a running average of the ADC Codes
-    ave_level = cur_level / DATA_IIR_CONST + ave_level * (DATA_IIR_CONST - 1) / DATA_IIR_CONST;
-    ave_current = cur_current / DATA_IIR_CONST + ave_current * (DATA_IIR_CONST - 1) / DATA_IIR_CONST;
-    // Maxes
-    if (cur_level > max_level) {
-      max_level = cur_level;
-    }
-    if (cur_current > max_current) {
-      max_current = cur_current;
-    }
-    // Mins
-    if (cur_level < min_level) {
-      min_level = cur_level;
-    }
-    if (cur_current < min_current) {
-      min_current = cur_current;
-    }
-    //Extract the Pump Cycle Time
-    if (pos_cycle) {
-      if (cur_current > 10) { //Postive threshold
-        last_cycle = Date.now();
-        pos_cycle = false;
+    try {
+      let cur_level = await ads1115.measure('0+3'); //This never gets near zero
+      let cur_current = await ads1115.measure('2+3'); //This can go slightly below zero
+      if (cur_current >= 32768) { // 2's compliment crosses near zero sometimes
+        cur_current = cur_current - 65536; //Take me negative
       }
-    } else {
-      if (cur_current < 8) { //Negative threshold
-        let cur_cycle_time = (Date.now() - last_cycle);
-        ave_cycle_time = cur_cycle_time / CYCLE_IIR_CONST + ave_cycle_time * (CYCLE_IIR_CONST - 1) / CYCLE_IIR_CONST;
-        if (cur_cycle_time > max_cycle_time) {
-          max_cycle_time = cur_cycle_time;
-        }
-        if (cur_cycle_time < min_cycle_time) {
-          min_cycle_time = cur_cycle_time;
-        }
-        pos_cycle = true;
+      if (first_reading) {
+        ave_level = cur_level;
+        ave_current = cur_current;
+        first_reading = false;
+      } else {
+        // Use a IIR to take a running average of the ADC Codes
+        ave_level = cur_level / DATA_IIR_CONST + ave_level * (DATA_IIR_CONST - 1) / DATA_IIR_CONST;
+        ave_current = cur_current / DATA_IIR_CONST + ave_current * (DATA_IIR_CONST - 1) / DATA_IIR_CONST;
       }
-    }
-  }
-})
+      // Maxes
+      if (cur_level > max_level) {
+        max_level = cur_level;
+      }
+      if (cur_current > max_current) {
+        max_current = cur_current;
+      }
+      // Mins
+      if (cur_level < min_level) {
+        min_level = cur_level;
+      }
+      if (cur_current < min_current) {
+        min_current = cur_current;
+      }
+      //Extract the Pump Cycle Time
+      if (pos_cycle) {
+        if (cur_current > 10) { //Postive threshold
+          last_cycle = Date.now();
+          pos_cycle = false;
+        }
+      } else {
+        if (cur_current < 8) { //Negative threshold
+          let cur_cycle_time = (Date.now() - last_cycle);
+          if (first_cycle) {
+            ave_cycle_time = cur_cycle_time;
+            first_cycle = false;
+          } else {
+            ave_cycle_time = cur_cycle_time / CYCLE_IIR_CONST + ave_cycle_time * (CYCLE_IIR_CONST - 1) / CYCLE_IIR_CONST;
+          }
+          if (cur_cycle_time > max_cycle_time) {
+            max_cycle_time = cur_cycle_time;
+          }
+          if (cur_cycle_time < min_cycle_time) {
+            min_cycle_time = cur_cycle_time;
+          }
+          pos_cycle = true;
+        }
+      } // closes else
+    } catch (e) { // closes try
+      logWithTime('ADC Loop Error: ' + e.message);
+      await new Promise(res => setTimeout(res, 1000)); // sleep before retry
+    } // closes catch
+  } // closes while
+}).catch(err => {
+  logWithTime('ADC Initialization Error: ' + err);
+});
 //log stuff to a file for debug
 function logWithTime(errmsg) {
   const curDate = new Date();
