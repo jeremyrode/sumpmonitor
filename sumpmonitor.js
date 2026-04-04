@@ -25,10 +25,9 @@ const datafile = fs.createWriteStream(DATA_LOG_FILE, { flags: 'a' });
 const GoogleAuth = new google.auth.GoogleAuth({
   scopes: 'https://www.googleapis.com/auth/spreadsheets'
 });
-let auth = [];
-auth.expiryDate = 0;
+let auth = { expiryDate: 0 };
 //Store the measurments, sent to Google in batches
-let measurmentArray = [];
+let measurementArray = [];
 //Running Averages
 let min_level = 10000000;
 let ave_level = 0;
@@ -46,7 +45,7 @@ lcd.clearSync();
 //Fill the display initally
 lcd.printLineSync(0, 'Starting....');
 //Interval Section
-setTimeout(setInterval, 30 * 60 * 1000, TakeMeasurement, 30 * 60 * 1000); //Take a Datapoint every 30 min, after 30 min delay to flush
+setTimeout(() => setInterval(TakeMeasurement, 30 * 60 * 1000), 30 * 60 * 1000); //Take a Datapoint every 30 min, after 30 min delay to flush
 setInterval(AppendSpreadSheet, 2 * 60 * 60 * 1000); //Send data to Google
 //SCREEN SECTION: Print out each line seperatly at approprite intevals
 printIPAddress();
@@ -58,9 +57,9 @@ setInterval(printTime, 5000);
 setInterval(printData, 1000);
 //SCREEN PRINT SECTION: By line
 function printData() {
-  const lastIndex = measurmentArray.length;
+  const lastIndex = measurementArray.length;
   if (lastIndex > 0) {
-    lcd.printLineSync(0, measurmentArray[lastIndex - 1][1].toFixed(2).padStart(6) + measurmentArray[lastIndex - 1][2].toFixed(2).padStart(6));
+    lcd.printLineSync(0, measurementArray[lastIndex - 1][1].toFixed(2).padStart(6) + measurementArray[lastIndex - 1][2].toFixed(2).padStart(6));
   }
 }
 function printTime() {
@@ -89,18 +88,18 @@ async function AppendSpreadSheet() {
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     resource: {
-      values: measurmentArray,
+      values: measurementArray,
     },
     auth: auth
   }, (err, result) => {
     if (err) {
       logWithTime('Append Threw: ' + err);
-      logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
-    } else if (!result.statusText === 'OK') {
-      logWithTime('Google Says Not OK: ' + result);
-      logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
+      logWithTime('Cacheing ' + measurementArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
+    } else if (result.statusText !== 'OK') {
+      logWithTime('Google Says Not OK: ' + JSON.stringify(result));
+      logWithTime('Cacheing ' + measurementArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
     } else {
-      measurmentArray = []; //If success clear out stored measurments
+      measurementArray = []; //If success clear out stored measurments
       internet_down = false;
     }
   });
@@ -126,8 +125,8 @@ function TakeMeasurement() {
   const ave_current_amps = adcCodeToCurrent(ave_current);
   const max_current_amps = adcCodeToCurrent(max_current);
   //Push into measurement array for Google
-  if (measurmentArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
-    measurmentArray.push([(curDate - dateOffset) / dayFraction, min_level_inches, ave_level_inches, max_level_inches,
+  if (measurementArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
+    measurementArray.push([(curDate - dateOffset) / dayFraction, min_level_inches, ave_level_inches, max_level_inches,
       min_current_amps, ave_current_amps, max_current_amps, min_cycle_time / 1000, ave_cycle_time / 1000, max_cycle_time / 1000]);
   } else if (!internet_down) { //ony log on state change
     logWithTime('Dropping Measurments due to Max Data');
@@ -154,7 +153,7 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
   while (true) { //Run the ADC as fast as we can
     let cur_level = await ads1115.measure('0+3'); //This never gets near zero
     let cur_current = await ads1115.measure('2+3'); //This can go slightly below zero
-    if (cur_current > 32768) { // 2's compliment crosses near zero sometimes
+    if (cur_current >= 32768) { // 2's compliment crosses near zero sometimes
       cur_current = cur_current - 65536; //Take me negative
     }
     // Use a IIR to take a running average of the ADC Codes
