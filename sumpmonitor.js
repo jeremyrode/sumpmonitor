@@ -24,10 +24,9 @@ const datafile = fs.createWriteStream(DATA_LOG_FILE, {flags:'a'});
 const GoogleAuth = new google.auth.GoogleAuth({
     scopes: 'https://www.googleapis.com/auth/spreadsheets'
 });
-let auth = [];
-auth.expiryDate = 0;
-//Store the measurments, sent to Google in batches
-let measurmentArray = [];
+let auth = { expiryDate: 0 };
+//Store the measurements, sent to Google in batches
+let measurementArray = [];
 //Running Averages
 let ave_level = 0;
 let ave_current = 0;
@@ -50,9 +49,9 @@ setInterval(printTime, 5000);
 setInterval(printData, 1000);
 //SCREEN PRINT SECTION: By line
 function printData() { //The interval for this is
-  const lastIndex = measurmentArray.length;
+  const lastIndex = measurementArray.length;
   if (lastIndex > 0) {
-    lcd.printLineSync(0, measurmentArray[lastIndex-1][1].toFixed(2).padStart(6) + measurmentArray[lastIndex-1][2].toFixed(2).padStart(6));
+    lcd.printLineSync(0, measurementArray[lastIndex-1][1].toFixed(2).padStart(6) + measurementArray[lastIndex-1][2].toFixed(2).padStart(6));
   }
 }
 function printTime() {
@@ -71,28 +70,39 @@ function printIPAddress() {
 }
 //Send the Data to Google Sheets, retain in memory if not sent
 async function AppendSpreadSheet() {
-   if (auth.expiryDate < Date.now()) {
+  if (auth.expiryDate < Date.now()) {
     logWithTime('Getting New Google Credentials');
-    auth = await GoogleAuth.getClient();
+    try {
+      auth = await GoogleAuth.getClient();
+    } catch (e) {
+      logWithTime('Auth error: ' + e);
+      return;
+    }
   }
+
+  if (measurementArray.length === 0) return;
+  const pendingData = measurementArray.splice(0, measurementArray.length);
+
   sheets.spreadsheets.values.append({
     spreadsheetId: process.env.SPREADSHEET_ID,
     range: 'Sheet1!A:C',
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     resource: {
-        values: measurmentArray,
+        values: pendingData,
       },
     auth: auth
   }, (err, result) => {
     if (err) {
         logWithTime('Append Threw: ' + err);
-        logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
-    } else if (!result.statusText === 'OK') {
-        logWithTime('Google Says Not OK: ' + result);
-        logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
+        measurementArray.unshift(...pendingData);
+        logWithTime('Caching ' + measurementArray.length + " Measurements with " + process.resourceUsage().maxRSS + ' kB RAM');
+    } else if (result && result.statusText !== 'OK') {
+        let status = result.statusText || result;
+        logWithTime('Google Says Not OK: ' + status);
+        measurementArray.unshift(...pendingData);
+        logWithTime('Caching ' + measurementArray.length + " Measurements with " + process.resourceUsage().maxRSS + ' kB RAM');
     } else {
-      measurmentArray = []; //If success clear out stored measurments
       internet_down = false;
     }
   });
@@ -111,10 +121,10 @@ function TakeMeasurement() {
     current_amps = 6.14e-2*ave_current_debiased - 1.6e-4*ave_current_debiased*ave_current_debiased; // Not linear at low current
   }
   //Push into measurement array for Google
-  if (measurmentArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
-    measurmentArray.push([(curDate - dateOffset) / dayFraction, depth_inches, current_amps]);
+  if (measurementArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
+    measurementArray.push([(curDate - dateOffset) / dayFraction, depth_inches, current_amps]);
   } else if (!internet_down) { //ony log on state change
-    logWithTime('Dropping Measurments due to Max Data');
+    logWithTime('Dropping Measurements due to Max Data');
     internet_down = true;
   }
   //Log to a CSV for backup
@@ -127,7 +137,7 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
   while (true) { //Run the ADC as fast as we can
     let cur_level = await ads1115.measure('0+3'); //This never gets near zero
     let cur_current = await ads1115.measure('2+3'); //This can go slightly below zero
-    if (cur_current > 32768) { // 2's compliment crosses near zero sometimes
+    if (cur_current >= 32768) { // 2's compliment crosses near zero sometimes
       cur_current = cur_current - 65536; //Take me negative
     }
     // Use a IIR to take a running average of the ADC Codes
