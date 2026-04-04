@@ -7,7 +7,7 @@ const sheets = google.sheets('v4');
 const fs = require('fs');
 const LCD = require('raspberrypi-liquid-crystal');
 const ADS1115 = require('ads1115');
-const lcd = new LCD( 1, 0x27, 20, 4 );
+const lcd = new LCD(1, 0x27, 20, 4);
 const ip = require("ip");
 
 const DATA_LOG_FILE = '/home/jprode/SumpData.csv';
@@ -19,11 +19,11 @@ const ZERO_LEVEL_CODE = 3084.327283; //Code at Zero water level, Might be altitu
 const DEPTH_SLOPE = 148.93; //Codes per inch, prob temp dependent
 const ZERO_CURRENT_CODE = 2; //How many codes is zero current
 const dayFraction = 86400000; // Milliseconds in a Day
-const dateOffset = new Date(1899,11,30) - 3600000;  // Spreadsheet Epoc minus an hour
-const logfile = fs.createWriteStream(ERR_LOG_FILE, {flags:'a'});
-const datafile = fs.createWriteStream(DATA_LOG_FILE, {flags:'a'});
+const dateOffset = new Date(1899, 11, 30) - 3600000;  // Spreadsheet Epoc minus an hour
+const logfile = fs.createWriteStream(ERR_LOG_FILE, { flags: 'a' });
+const datafile = fs.createWriteStream(DATA_LOG_FILE, { flags: 'a' });
 const GoogleAuth = new google.auth.GoogleAuth({
-    scopes: 'https://www.googleapis.com/auth/spreadsheets'
+  scopes: 'https://www.googleapis.com/auth/spreadsheets'
 });
 let auth = [];
 auth.expiryDate = 0;
@@ -44,9 +44,9 @@ let internet_down = false;
 lcd.beginSync();
 lcd.clearSync();
 //Fill the display initally
-lcd.printLineSync(0,'Starting....');
+lcd.printLineSync(0, 'Starting....');
 //Interval Section
-setTimeout(setInterval,30 * 60 * 1000,TakeMeasurement, 30 * 60 * 1000); //Take a Datapoint every 30 min, after 30 min delay to flush
+setTimeout(setInterval, 30 * 60 * 1000, TakeMeasurement, 30 * 60 * 1000); //Take a Datapoint every 30 min, after 30 min delay to flush
 setInterval(AppendSpreadSheet, 2 * 60 * 60 * 1000); //Send data to Google
 //SCREEN SECTION: Print out each line seperatly at approprite intevals
 printIPAddress();
@@ -60,16 +60,16 @@ setInterval(printData, 1000);
 function printData() {
   const lastIndex = measurmentArray.length;
   if (lastIndex > 0) {
-    lcd.printLineSync(0, measurmentArray[lastIndex-1][1].toFixed(2).padStart(6) + measurmentArray[lastIndex-1][2].toFixed(2).padStart(6));
+    lcd.printLineSync(0, measurmentArray[lastIndex - 1][1].toFixed(2).padStart(6) + measurmentArray[lastIndex - 1][2].toFixed(2).padStart(6));
   }
 }
 function printTime() {
   const curDate = new Date();
-  lcd.printLineSync(1, curDate.toString().slice(16,24));
+  lcd.printLineSync(1, curDate.toString().slice(16, 24));
 }
 function printDate() {
   const curDate = new Date();
-  lcd.printLineSync(2, curDate.toString().slice(0,15));
+  lcd.printLineSync(2, curDate.toString().slice(0, 15));
 }
 function printADCCodes() {
   lcd.printLineSync(2, ave_level.toFixed(2).padStart(10) + ave_current.toFixed(2).padStart(10))
@@ -79,7 +79,7 @@ function printIPAddress() {
 }
 //Send the Data to Google Sheets, retain in memory if not sent
 async function AppendSpreadSheet() {
-   if (auth.expiryDate < Date.now()) {
+  if (auth.expiryDate < Date.now()) {
     logWithTime('Getting New Google Credentials');
     auth = await GoogleAuth.getClient();
   }
@@ -89,16 +89,16 @@ async function AppendSpreadSheet() {
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     resource: {
-        values: measurmentArray,
-      },
+      values: measurmentArray,
+    },
     auth: auth
   }, (err, result) => {
     if (err) {
-        logWithTime('Append Threw: ' + err);
-        logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
+      logWithTime('Append Threw: ' + err);
+      logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
     } else if (!result.statusText === 'OK') {
-        logWithTime('Google Says Not OK: ' + result);
-        logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
+      logWithTime('Google Says Not OK: ' + result);
+      logWithTime('Cacheing ' + measurmentArray.length + " Measurments with " + process.resourceUsage().maxRSS + ' kB RAM');
     } else {
       measurmentArray = []; //If success clear out stored measurments
       internet_down = false;
@@ -109,9 +109,9 @@ function adcCodeToCurrent(adc_code) { //Translate ADC Codes to Current
   const ave_current_debiased = adc_code - ZERO_CURRENT_CODE;
   let current_amps;
   if (adc_code > 180) { //not linear becuase a diode envelope detector is used to sample at less than Nyquist
-    current_amps = 0.00391216*(ave_current_debiased - 0.4) + 5.15725; // Linear at high current
+    current_amps = 0.00391216 * (ave_current_debiased - 0.4) + 5.15725; // Linear at high current
   } else { //See spreadsheet in tools
-    current_amps = 6.14e-2*ave_current_debiased - 1.6e-4*ave_current_debiased*ave_current_debiased; // Not linear at low current
+    current_amps = 6.14e-2 * ave_current_debiased - 1.6e-4 * ave_current_debiased * ave_current_debiased; // Not linear at low current
   }
   return current_amps;
 }
@@ -127,15 +127,15 @@ function TakeMeasurement() {
   const max_current_amps = adcCodeToCurrent(max_current);
   //Push into measurement array for Google
   if (measurmentArray.length < MAX_DATA_IN_RAM) { //Stop caching in RAM if too many so we don't crash 
-    measurmentArray.push([(curDate - dateOffset) / dayFraction, min_level_inches, ave_level_inches, max_level_inches, 
-      min_current_amps, ave_current_amps, max_current_amps, min_cycle_time/1000, ave_cycle_time/1000, max_cycle_time/1000]);
+    measurmentArray.push([(curDate - dateOffset) / dayFraction, min_level_inches, ave_level_inches, max_level_inches,
+      min_current_amps, ave_current_amps, max_current_amps, min_cycle_time / 1000, ave_cycle_time / 1000, max_cycle_time / 1000]);
   } else if (!internet_down) { //ony log on state change
     logWithTime('Dropping Measurments due to Max Data');
     internet_down = true;
   }
   //Log to a CSV for backup
-  datafile.write(curDate.valueOf() + ',' + min_level_inches.toFixed(4) + ',' + ave_level_inches.toFixed(4) + ',' + max_level_inches.toFixed(4) + ',' 
-    + min_current_amps.toFixed(4) + ',' + ave_current_amps.toFixed(4) + ',' + max_current_amps.toFixed(4)  + ',' 
+  datafile.write(curDate.valueOf() + ',' + min_level_inches.toFixed(4) + ',' + ave_level_inches.toFixed(4) + ',' + max_level_inches.toFixed(4) + ','
+    + min_current_amps.toFixed(4) + ',' + ave_current_amps.toFixed(4) + ',' + max_current_amps.toFixed(4) + ','
     + min_cycle_time.toFixed(4) + ',' + ave_cycle_time.toFixed(4) + ',' + max_cycle_time.toFixed(4) + '\n');
   //Reset Min/Max
   min_level = 10000000;
@@ -183,7 +183,7 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
     } else {
       if (cur_current < 8) { //Negative threshold
         let cur_cycle_time = (Date.now() - last_cycle);
-        ave_cycle_time =  cur_cycle_time / CYCLE_IIR_CONST + ave_cycle_time * (CYCLE_IIR_CONST - 1) / CYCLE_IIR_CONST;
+        ave_cycle_time = cur_cycle_time / CYCLE_IIR_CONST + ave_cycle_time * (CYCLE_IIR_CONST - 1) / CYCLE_IIR_CONST;
         if (cur_cycle_time > max_cycle_time) {
           max_cycle_time = cur_cycle_time;
         }
@@ -197,9 +197,9 @@ ADS1115.open(0, 0x48).then(async (ads1115) => {
 })
 //log stuff to a file for debug
 function logWithTime(errmsg) {
-    const curDate = new Date();
-    const dateStr = curDate.toString();
-    const message = dateStr.slice(0,dateStr.length-33) + ' ' + errmsg; //Prepend Time to message
-    console.log(message);
-    logfile.write(message + '\n')
-  }
+  const curDate = new Date();
+  const dateStr = curDate.toString();
+  const message = dateStr.slice(0, dateStr.length - 33) + ' ' + errmsg; //Prepend Time to message
+  console.log(message);
+  logfile.write(message + '\n')
+}
